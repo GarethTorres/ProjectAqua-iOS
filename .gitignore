@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode generated
+*.xccheckout
+*.xcscmblueprint
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Other
+*.swp
+*~
+.claude/
