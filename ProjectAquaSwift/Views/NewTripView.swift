@@ -7,22 +7,34 @@ import SwiftUI
 
 struct NewTripView: View {
     @Environment(\.dismiss) private var dismiss
-    @Binding var trips: [Trip]
+    let tripStore: TripStore
+    @Binding var navigationPath: NavigationPath
 
     @State private var tripName: String = ""
     @State private var destination: String = ""
     @State private var itineraryText: String = ""
-    @State private var showingPlaceholder: Bool = false
+    @State private var parsedItinerary: ParsedItinerary?
+    @FocusState private var isTextEditorFocused: Bool
+
+    private let parser = ItineraryParser()
 
     private var isValid: Bool {
         !tripName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
-        Form {
-            tripDetailsSection
-            itinerarySection
+        ScrollView {
+            VStack(spacing: 0) {
+                tripDetailsSection
+                itinerarySection
+            }
+            .padding(.bottom, 100) // Space for sticky button
         }
+        .background(Color(.systemGroupedBackground))
+        .safeAreaInset(edge: .bottom) {
+            findPlacesButton
+        }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("New Trip")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -31,48 +43,111 @@ struct NewTripView: View {
                     dismiss()
                 }
             }
+            ToolbarItem(placement: .keyboard) {
+                HStack {
+                    Spacer()
+                    Button("Done") {
+                        isTextEditorFocused = false
+                    }
+                }
+            }
         }
-        .sheet(isPresented: $showingPlaceholder) {
-            PlaceholderResultView(tripName: tripName, onDismiss: {
-                showingPlaceholder = false
-                saveTrip()
-                dismiss()
-            })
+        .sheet(item: $parsedItinerary) { itinerary in
+            PlaceConfirmationView(
+                tripName: tripName,
+                tripDestination: destination,
+                parsedItinerary: itinerary,
+                tripStore: tripStore,
+                onComplete: { tripId in
+                    parsedItinerary = nil
+                    // Navigate directly to trip detail
+                    navigationPath.removeLast(navigationPath.count)
+                    navigationPath.append(AppDestination.tripDetail(tripId))
+                },
+                onCancel: {
+                    parsedItinerary = nil
+                }
+            )
         }
     }
 
     // MARK: - Trip Details Section
 
     private var tripDetailsSection: some View {
-        Section {
-            TextField("Trip Name", text: $tripName)
-                .textContentType(.name)
-
-            TextField("Destination (optional)", text: $destination)
-                .textContentType(.location)
-        } header: {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Trip Details")
-        } footer: {
-            Text("Give your trip a name to get started.")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+                .padding(.top, 20)
+
+            VStack(spacing: 0) {
+                TextField("Trip Name", text: $tripName)
+                    .textContentType(.name)
+                    .padding()
+                    .background(Color(.secondarySystemGroupedBackground))
+
+                Divider()
+                    .padding(.leading)
+
+                TextField("Destination (e.g., New Mexico)", text: $destination)
+                    .textContentType(.location)
+                    .padding()
+                    .background(Color(.secondarySystemGroupedBackground))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal)
+
+            Text("Give your trip a name and destination to get started.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
         }
     }
 
     // MARK: - Itinerary Section
 
     private var itinerarySection: some View {
-        Section {
-            TextEditor(text: $itineraryText)
-                .frame(minHeight: 200)
-                .overlay(alignment: .topLeading) {
-                    if itineraryText.isEmpty {
-                        Text("Paste your itinerary here...\n\nExample:\nDay 1: Arrive in Tokyo, check into hotel\nDay 2: Visit Senso-ji Temple, explore Asakusa\nDay 3: Day trip to Mount Fuji")
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 8)
-                            .padding(.leading, 4)
-                            .allowsHitTesting(false)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Itinerary")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+                .padding(.top, 20)
 
+            ZStack(alignment: .topLeading) {
+                // TextEditor with fixed height - internally scrollable
+                TextEditor(text: $itineraryText)
+                    .focused($isTextEditorFocused)
+                    .frame(height: 300) // Fixed height, scrollable inside
+                    .scrollContentBackground(.hidden)
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                // Placeholder
+                if itineraryText.isEmpty {
+                    Text("Paste your itinerary here...\n\nExample:\nDay 1\nSanta Fe Plaza\nGeorgia O'Keeffe Museum\n\nDay 2\nMeow Wolf\nCanyon Road")
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 20)
+                        .padding(.leading, 16)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(.horizontal)
+
+            Text("Paste your travel itinerary and we'll extract the destinations for you.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+        }
+    }
+
+    // MARK: - Find Places Button (Sticky)
+
+    private var findPlacesButton: some View {
+        VStack(spacing: 0) {
+            Divider()
             Button(action: findPlaces) {
                 HStack {
                     Spacer()
@@ -80,77 +155,27 @@ struct NewTripView: View {
                         .font(.headline)
                     Spacer()
                 }
+                .padding()
+                .background(isValid ? Color.accentColor : Color.gray)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .disabled(!isValid)
-        } header: {
-            Text("Itinerary")
-        } footer: {
-            Text("Paste your travel itinerary and we'll extract the destinations for you.")
+            .padding()
+            .background(.ultraThinMaterial)
         }
     }
 
     // MARK: - Actions
 
     private func findPlaces() {
-        showingPlaceholder = true
-    }
-
-    private func saveTrip() {
-        let trip = Trip(
-            name: tripName.trimmingCharacters(in: .whitespacesAndNewlines),
-            destination: destination.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        trips.insert(trip, at: 0)
-    }
-}
-
-// MARK: - Placeholder Result View
-
-struct PlaceholderResultView: View {
-    let tripName: String
-    let onDismiss: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Spacer()
-
-                Image(systemName: "sparkles")
-                    .font(.system(size: 60))
-                    .foregroundStyle(Color.accentColor)
-
-                Text("Coming Soon")
-                    .font(.title)
-                    .fontWeight(.semibold)
-
-                Text("Place extraction will analyze your itinerary and find all the destinations mentioned.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-
-                Spacer()
-
-                Button(action: onDismiss) {
-                    Text("Save Trip")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                .padding(.horizontal)
-                .padding(.bottom)
-            }
-            .navigationTitle(tripName)
-            .navigationBarTitleDisplayMode(.inline)
-        }
+        isTextEditorFocused = false
+        parsedItinerary = parser.parse(itineraryText)
     }
 }
 
 #Preview {
     NavigationStack {
-        NewTripView(trips: .constant([]))
+        NewTripView(tripStore: TripStore(), navigationPath: .constant(NavigationPath()))
     }
 }

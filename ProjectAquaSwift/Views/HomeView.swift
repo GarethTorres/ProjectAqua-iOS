@@ -6,22 +6,21 @@
 import SwiftUI
 
 struct HomeView: View {
-    @Binding var trips: [Trip]
+    let tripStore: TripStore
+    @Binding var navigationPath: NavigationPath
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 32) {
-                    headerSection
-                    newTripButton
-                    upcomingTripsSection
-                }
-                .padding()
+        ScrollView {
+            VStack(spacing: 32) {
+                headerSection
+                newTripButton
+                upcomingTripsSection
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Project Aqua")
-            .navigationBarTitleDisplayMode(.large)
+            .padding()
         }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Project Aqua")
+        .navigationBarTitleDisplayMode(.large)
     }
 
     // MARK: - Header Section
@@ -42,9 +41,7 @@ struct HomeView: View {
     // MARK: - New Trip Button
 
     private var newTripButton: some View {
-        NavigationLink {
-            NewTripView(trips: $trips)
-        } label: {
+        NavigationLink(value: AppDestination.newTrip) {
             Label("New Trip", systemImage: "plus.circle.fill")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
@@ -63,7 +60,7 @@ struct HomeView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            if trips.isEmpty {
+            if tripStore.trips.isEmpty {
                 emptyState
             } else {
                 tripsList
@@ -95,16 +92,19 @@ struct HomeView: View {
 
     private var tripsList: some View {
         VStack(spacing: 8) {
-            ForEach(trips) { trip in
-                TripRow(trip: trip)
+            ForEach(tripStore.trips) { trip in
+                NavigationLink(value: AppDestination.tripDetail(trip.id)) {
+                    TripRowContent(trip: trip)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
 }
 
-// MARK: - Trip Row
+// MARK: - Trip Row Content
 
-struct TripRow: View {
+struct TripRowContent: View {
     let trip: Trip
 
     var body: some View {
@@ -113,6 +113,7 @@ struct TripRow: View {
                 Text(trip.name)
                     .font(.body)
                     .fontWeight(.medium)
+                    .foregroundStyle(.primary)
 
                 if !trip.destination.isEmpty {
                     Text(trip.destination)
@@ -120,9 +121,20 @@ struct TripRow: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text(trip.createdAt, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Text(trip.createdAt, style: .date)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+
+                    if !trip.places.isEmpty {
+                        Text("·")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Text("\(trip.places.count) places")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
 
             Spacer()
@@ -137,13 +149,15 @@ struct TripRow: View {
     }
 }
 
-#Preview {
-    HomeView(trips: .constant([]))
+// MARK: - Navigation Destination
+
+enum AppDestination: Hashable {
+    case newTrip
+    case tripDetail(UUID)
 }
 
-#Preview("With Trips") {
-    HomeView(trips: .constant([
-        Trip(name: "Japan 2026", destination: "Tokyo, Kyoto, Osaka"),
-        Trip(name: "Weekend Getaway", destination: "Big Sur")
-    ]))
+#Preview {
+    NavigationStack {
+        HomeView(tripStore: TripStore(), navigationPath: .constant(NavigationPath()))
+    }
 }
